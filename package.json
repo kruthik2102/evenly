@@ -1,0 +1,12 @@
+{
+  "name": "evenly",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Free, serverless, local-first group expense splitting. No backend, no database, no accounts.",
+  "type": "module",
+  "scripts": {
+    "serve": "node scripts/serve.mjs",
+    "test": "node --test tests/core.test.mjs"
+  },
+  "license": "MIT"
+}
