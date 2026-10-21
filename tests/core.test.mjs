@@ -163,15 +163,15 @@ test('two phones: invite, claim, add expenses offline, exchange links, agree', a
   // A monthly rent that both phones will materialise independently.
   await a.saveExpense(g, null, { desc: 'Locker', amount: 30000, currency: 'INR', date: '2026-08-21', paidBy: { [meA]: 30000 }, split: { mode: 'equal', members: [meA, bharat] }, repeat: 'monthly' });
 
-  const fromA = await a.syncLink(g);
-  const fromB = await b.syncLink(g);
+  const fromA = await a.shareLink(g);
+  const fromB = await b.shareLink(g);
   await b.importText(fromA.link);
   await a.importText(fromB.link);
   await a.catchUpRecurring();
   await b.catchUpRecurring();
-  const again = await a.syncLink(g);
+  const again = await a.shareLink(g);
   await b.importText(again.link);
-  const back = await b.syncLink(g);
+  const back = await b.shareLink(g);
   await a.importText(back.link);
 
   const net = (s) => groupBalances(s.state(g)).net;
@@ -184,8 +184,8 @@ test('two phones: invite, claim, add expenses offline, exchange links, agree', a
   const hotel = [...a.state(g).expense.values()].find((e) => e.desc === 'Hotel');
   await a.saveExpense(g, hotel.id, { notes: 'Two rooms' });
   await b.saveExpense(g, hotel.id, { category: 'transport.hotel' });
-  await b.importText((await a.syncLink(g)).link);
-  await a.importText((await b.syncLink(g)).link);
+  await b.importText((await a.shareLink(g)).link);
+  await a.importText((await b.shareLink(g)).link);
   for (const s of [a, b]) {
     const h = s.state(g).expense.get(hotel.id);
     assert.equal(h.notes, 'Two rooms');
@@ -237,4 +237,39 @@ Paid by Card 1111.00
   ]);
   assert.equal(r.extras.reduce((a, x) => a + x.amount, 0), 10100);
   assert.equal(r.total, 111100);
+});
+
+test('any shared link lets a friend join, even one shared after the invite', async () => {
+  let t = Date.UTC(2026, 9, 21, 9);
+  const now = () => (t += 1000);
+  const me = await new Store(memoryPersistence(), { now }).init();
+  const nitin = await new Store(memoryPersistence(), { now }).init();
+  await me.setupDevice({ name: 'Kruthik' });
+  await nitin.setupDevice({ name: 'Nitin' });
+
+  const g = await me.createGroup({ name: 'Flat', members: [{ name: 'Nitin' }] });
+  const [mine, nitinId] = me.members(g).map((m) => m.id);
+  await me.saveExpense(g, null, { desc: 'Rent', amount: 2000000, currency: 'INR', date: '2026-10-01', paidBy: { [mine]: 2000000 }, split: { mode: 'equal', members: [mine, nitinId] }, receipt: 'data:image/jpeg;base64,AAAA' });
+
+  // The everyday "Share" link, not a special invite: it still lets Nitin in.
+  const { link, count } = await me.shareLink(g);
+  assert.ok(count > 0);
+  assert.ok(link.includes('#join='));
+  const res = await nitin.importText(`“Flat” on Evenly. Tap to join: ${link}`);
+  assert.equal(res.isNew, true);
+  assert.equal(res.needsClaim, true);
+  await nitin.claim(g, nitinId);
+  assert.deepEqual(groupBalances(nitin.state(g)).net, groupBalances(me.state(g)).net);
+
+  // Receipt photos stay out of links (they'd make them huge) but travel phone to phone.
+  assert.equal(nitin.receiptOf(g, [...nitin.state(g).expense.keys()][0]), null);
+  const missing = me.groups.get(g).ledger.missingFor(nitin.groups.get(g).ledger.summary());
+  assert.ok(missing.some((op) => op.t === 'receipt'));
+  assert.equal(me.receiptOf(g, [...me.state(g).expense.keys()][0]), 'data:image/jpeg;base64,AAAA');
+
+  // Opening the same kind of link again as a member just merges.
+  await me.saveExpense(g, null, { desc: 'Wi-Fi', amount: 100000, currency: 'INR', date: '2026-10-02', paidBy: { [mine]: 100000 }, split: { mode: 'equal', members: [mine, nitinId] } });
+  const again = await nitin.importText((await me.shareLink(g)).link);
+  assert.equal(again.isNew, false);
+  assert.equal(again.added, 1);
 });

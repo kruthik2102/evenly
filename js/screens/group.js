@@ -25,9 +25,9 @@ export async function exportGroupCSV(g) {
 export class GroupScreen {
   constructor(g) {
     this.g = g;
-    this.backTitle = () => app.store.state(g)?.group.name || 'Group';
+    this.backTitle = () => app.store.groupName(g);
   }
-  title() { return app.store.state(this.g)?.group.name || 'Group'; }
+  title() { return app.store.groupName(this.g); }
   actions() {
     if (!this.alive()) return '';
     const n = app.store.unsharedCount(this.g);
@@ -64,7 +64,7 @@ export class GroupScreen {
       <div class="hero group-hero">
         ${groupTile(st.group, 'xxl')}
         <div class="hero-text">
-          <h2>${st.group.name}</h2>
+          <h2>${store.groupName(this.g)}</h2>
           <button class="chip small" data-act="settings">${icon('people')} ${members.length} ${members.length === 1 ? 'person' : 'people'}</button>
         </div>
       </div>
@@ -114,7 +114,7 @@ export class GroupScreen {
         <div class="swipe-actions"><button class="swipe-del" data-act="del" data-t="expense" data-id="${e.id}">Delete</button></div>
         <button class="swipe-content exp-row" data-act="exp" data-id="${e.id}">
           ${dateBlock}${catIcon(e.category)}
-          <span class="cell-main"><span class="cell-title">${e.desc}${e.repeat && e.repeat !== 'off' ? html` <span class="rep" title="Repeats">${icon('repeat')}</span>` : ''}${e.receipt ? html` <span class="rep" title="Has a receipt">${icon('receipt')}</span>` : ''}</span>
+          <span class="cell-main"><span class="cell-title">${e.desc}${e.repeat && e.repeat !== 'off' ? html` <span class="rep" title="Repeats">${icon('repeat')}</span>` : ''}${store.receiptOf(this.g, e.id) ? html` <span class="rep" title="Has a receipt">${icon('receipt')}</span>` : ''}</span>
             <span class="cell-sub">${who} ${formatMoney(e.amount, e.currency)}</span></span>
           <span class="cell-trailing stacked">${eff.kind === 'none' ? html`<span class="tiny muted">not involved</span>`
             : eff.kind === 'invalid' ? html`<span class="tiny neg">check split</span>`
@@ -356,7 +356,7 @@ export class GroupSettingsScreen {
       <div class="list">
         <button class="cell tappable" data-act="edit">
           <span class="cell-leading">${groupTile(st.group, 'lg')}</span>
-          <span class="cell-main"><span class="cell-title big">${st.group.name}</span><span class="cell-sub">${type.label} · ${st.group.currency || store.device.currency}</span></span>
+          <span class="cell-main"><span class="cell-title big">${store.groupName(this.g)}</span><span class="cell-sub">${st.group.direct ? 'Just the two of you' : type.label} · ${st.group.currency || store.device.currency}</span></span>
           <span class="cell-trailing tint-text">Edit</span>
         </button>
       </div>
@@ -521,6 +521,7 @@ export class NewGroupScreen {
       haptic('success');
       this.sheet.close();
       app.openGroup(g);
+      if (d.people.length) app.present(new InviteScreen(g)); // next step: send the group its link
     },
   };
 }

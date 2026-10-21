@@ -7,7 +7,9 @@
 // Op wire format (short keys keep share links small):
 //   { i: "dev:seq", g: groupId, d: deviceId, s: seq, c: clock, t: type, e: entityId, v: { field: value } }
 
-export const ENTITY_TYPES = ['group', 'member', 'expense', 'payment', 'comment', 'conversion'];
+// Receipt photos are their own entity (keyed by expense id) so links can leave
+// them out while live phone-to-phone sync still carries them.
+export const ENTITY_TYPES = ['group', 'member', 'expense', 'payment', 'comment', 'conversion', 'receipt'];
 
 export function newId(len = 12) {
   const bytes = new Uint8Array(len);
@@ -55,6 +57,7 @@ function emptyGroupState(id) {
     payment: new Map(),
     comment: new Map(),
     conversion: new Map(),
+    receipt: new Map(),
   };
 }
 

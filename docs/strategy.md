@@ -70,16 +70,31 @@ Edit history and the Activity feed fall out of the log at no extra cost.
 
 Three transports, all carrying the same thing: **encrypted op bundles**.
 
-### 4a. Share link (default, asynchronous)
-1. Tap **Share updates** in a group.
-2. Evenly packs every op the group hasn't been sent yet, compresses it
-   (`CompressionStream` deflate), encrypts it with the group key (AES-GCM-256),
-   and puts it in a link **after the `#`**: `…/#b=<data>`.
+### 4a. The group link (default, asynchronous)
+There is exactly one kind of link, so nobody has to know which to send:
+
+1. Tap **Share** in a group (or in a one-to-one ledger with a friend).
+2. Evenly packs the group's whole history (minus receipt photos), compresses
+   it (`CompressionStream` deflate), encrypts it with the group key
+   (AES-GCM-256), and puts it **after the `#`** together with the key:
+   `…/#join=<group>.<key>.<data>`.
 3. Send it however you like (WhatsApp, Telegram, SMS) via the system share sheet.
-4. A friend taps it, Evenly opens and merges.
+4. Whoever taps it: if they're new, they join (and pick who they are); if
+   they're already in, Evenly merges whatever they were missing.
+
+A personal invite is the same link with a member id inside, so the friend's
+phone is set up as that person with no questions.
 
 Browsers never send the part after `#` to any server, so even the static host
-can't see it. Large bundles go as a `.evenly` file through the same share sheet.
+can't see it. Groups whose history outgrows a chat message (around 50 KB of
+link) are sent as a `.evenly` file through the same share sheet. Receipt
+photos would bloat links, so they travel only over live phone-to-phone sync.
+
+*Lesson from testing:* the first version had separate invite and update
+links. A user naturally shared an update link with a friend who hadn't joined
+yet, and it couldn't open. Carrying the key in every link removes that trap
+without weakening anything, because update links already went to the same
+people as invites.
 
 ### 4b. QR code (in person)
 The invite and small bundles fit in a QR code. Scanning uses the browser's

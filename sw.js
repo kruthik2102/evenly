@@ -1,7 +1,7 @@
 // Offline support: network first so updates arrive on the next load, cache as the fallback offline.
 // Only same-origin GETs are cached; nothing the user enters ever reaches the network here.
 
-const CACHE = 'evenly-v2';
+const CACHE = 'evenly-v3';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'icon.svg', 'icon-maskable.svg', 'css/app.css',
   'js/main.js', 'js/app/app.js', 'js/app/store.js',

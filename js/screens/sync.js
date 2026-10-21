@@ -62,92 +62,92 @@ async function scanQR(container) {
   });
 }
 
-function shareButtons(kind) {
-  return html`<div class="button-stack">
-    <button class="btn btn-primary btn-large wide" data-act="share">${icon('share')} Share ${kind}</button>
-    <button class="btn btn-tinted wide" data-act="copy">${icon('link')} Copy link</button>
-  </div>`;
-}
+/* ---------------- The group link ---------------- */
 
-/* ---------------- Invite ---------------- */
+const LINK_TOO_LONG = 50000; // chat apps cap messages around 64k characters
 
-export class InviteScreen {
+/**
+ * One link for everything: new people join with it, people already in the
+ * group get the latest changes. With a member id it's a personal invite that
+ * sets the opener up as that person.
+ */
+export class GroupLinkScreen {
   constructor(g, memberId = null) {
     this.g = g;
+    // In a one-to-one ledger the link is always the friend's personal invite until they've joined.
+    if (!memberId && app.store.state(g).group.direct) {
+      const other = app.store.members(g).find((x) => x.id !== app.store.meIn(g));
+      if (other && !other.claimedBy) memberId = other.id;
+    }
     this.memberId = memberId;
     const m = memberId && app.store.state(g).member.get(memberId);
-    this.title = m ? `Invite ${m.name}` : 'Invite to group';
+    this.title = m ? `Invite ${m.name}` : 'Share group link';
+    this.count = app.store.unsharedCount(g);
     this.link = null;
     this.noAutoRefresh = true; // keep the QR code on screen while data changes
   }
   leading() { return html`<button class="nav-btn text bold" data-act="close">Done</button>`; }
+  #member() { return this.memberId && app.store.state(this.g).member.get(this.memberId); }
   body() {
     const st = app.store.state(this.g);
-    const m = this.memberId && st.member.get(this.memberId);
+    const m = this.#member();
+    const others = app.store.members(this.g).filter((x) => x.id !== app.store.meIn(this.g));
+    const name = st.group.direct ? `You and ${m?.name || others[0]?.name || 'a friend'}` : st.group.name;
+    const tooLong = this.link && this.link.length > LINK_TOO_LONG;
+    const hasPhotos = st.receipt.size > 0;
     return html`
-      <div class="invite-head">${groupTile(st.group, 'xl')}<h2>${st.group.direct ? `You and ${m?.name || 'a friend'}` : st.group.name}</h2>
-        <p>${m ? `This link opens Evenly on ${m.name}’s phone, already set up as ${m.name}.` : 'Anyone who opens this link can join, pick who they are, and add expenses.'}</p></div>
-      <div class="qr-card"><div class="qr">${raw('<div class="spinner"></div>')}</div><p class="fine">Scan with the phone’s camera, or share the link.</p></div>
-      ${shareButtons('invite')}
-      <p class="section-footer">The link carries the group’s encryption key and a copy of its history inside the part after “#”, which never reaches any web server. Treat it like a group chat invite: share it only with people in the group.</p>`;
+      <div class="invite-head">${groupTile(st.group, 'xl')}<h2>${name}</h2>
+        <p>${m ? `This link opens Evenly on ${m.name}’s phone, already set up as ${m.name}.`
+          : st.group.direct ? `Send this to ${app.store.groupName(this.g)}. Opening it brings in your latest changes.`
+          : 'Send this to the group chat. New people join with it, and people already in the group get the latest changes.'}</p>
+        ${!m && this.count ? html`<p class="fine">Includes the ${this.count} change${this.count === 1 ? '' : 's'} since you last shared.</p>` : ''}</div>
+      <div class="qr-card"><div class="qr">${raw('<div class="spinner"></div>')}</div><p class="fine">Scan with a phone camera, or send the link.</p></div>
+      <div class="button-stack">
+        ${tooLong ? html`<button class="btn btn-primary btn-large wide" data-act="file">${icon('share')} Send as a file</button>
+          <p class="section-footer">This group’s history is too long to fit in a chat message, so send it as a file. Opening the file in Evenly works the same as tapping a link.</p>`
+        : html`<button class="btn btn-primary btn-large wide" data-act="share" ${this.link ? '' : raw('disabled')}>${icon('share')} ${m ? `Send to ${m.name}` : 'Share link'}</button>`}
+        <button class="btn btn-tinted wide" data-act="copy" ${this.link ? '' : raw('disabled')}>${icon('link')} Copy link</button>
+      </div>
+      ${hasPhotos ? html`<p class="section-footer">Receipt photos aren’t included in links, to keep them short. Use live phone-to-phone sync to share photos.</p>` : ''}
+      <p class="section-footer">The link carries the group’s encryption key and its history inside the part after “#”, which never reaches any web server. Treat it like a group chat invite: only send it to people in the group.</p>`;
   }
   async mount(page) {
-    this.link = await app.store.inviteLink(this.g, this.memberId);
-    await fillQR(page, this.link);
-  }
-  on = {
-    close() { this.sheet.close(); },
-    async share() {
-      const st = app.store.state(this.g);
-      const text = `Join “${st.group.name}” on Evenly to split expenses. Open this link:`;
-      if (!(await shareText({ title: 'Evenly invite', text, url: this.link }))) { await copyText(this.link); toast('Link copied'); }
-    },
-    async copy() { await copyText(this.link); haptic(); toast('Invite link copied'); },
-  };
-}
-
-/* ---------------- Share updates ---------------- */
-
-export class ShareUpdatesScreen {
-  constructor(g) { this.g = g; this.title = 'Share updates'; this.full = false; this.link = null; this.count = 0; this.noAutoRefresh = true; }
-  leading() { return html`<button class="nav-btn text bold" data-act="close">Done</button>`; }
-  body() {
-    const st = app.store.state(this.g);
-    const n = app.store.unsharedCount(this.g);
-    return html`
-      <div class="invite-head">${groupTile(st.group, 'xl')}<h2>${st.group.name}</h2>
-        <p>${this.link ? `This link carries ${this.count} change${this.count === 1 ? '' : 's'}.` : n ? `${n} change${n === 1 ? '' : 's'} since you last shared.` : 'Nothing new since you last shared.'}</p></div>
-      ${this.link ? html`<div class="qr-card"><div class="qr">${raw('<div class="spinner"></div>')}</div></div>${shareButtons('update')}
-        ${this.link.length > 6000 ? html`<button class="btn btn-plain wide" data-act="file">Send as a file instead</button>` : ''}
-        <p class="section-footer">Send it to the group chat. When friends tap it, Evenly merges your changes into their copy. Ask them to share theirs back.</p>`
-      : html`<div class="button-stack">
-          <button class="btn btn-primary btn-large wide" data-act="make">${n ? `Create link with ${n} change${n === 1 ? '' : 's'}` : 'Create link anyway'}</button>
-          <button class="btn btn-plain wide" data-act="makeFull">Include everything (for someone who missed updates)</button>
-        </div>
-        <p class="section-footer">Updates are encrypted with the group’s key, so only members can open them.</p>`}`;
-  }
-  async #make(full) {
-    const { link, count } = await app.store.syncLink(this.g, { full });
+    const { link } = await app.store.shareLink(this.g, { claim: this.memberId });
     this.link = link;
-    this.count = count;
+    if (!page.isConnected) return;
     this.nav.refresh(this);
     await fillQR(this.page, link);
   }
+  #message() {
+    const st = app.store.state(this.g);
+    const m = this.#member();
+    if (m && st.group.direct) return `Hi ${m.name}! Let’s keep track of what we owe each other on Evenly. Tap to join:`;
+    if (m) return `Hi ${m.name}! I’ve added you to “${st.group.name}” on Evenly to split costs. Tap to join:`;
+    if (st.group.direct) return `Our expenses on Evenly, updated. Tap to see the latest:`;
+    return `“${st.group.name}” on Evenly. Tap to join, or to get the latest changes:`;
+  }
   on = {
     close() { this.sheet.close(); },
-    make() { this.#make(false); },
-    makeFull() { this.#make(true); },
     async share() {
-      const name = app.store.state(this.g).group.name;
-      if (!(await shareText({ title: 'Evenly update', text: `Updates for “${name}” on Evenly. Tap to merge:`, url: this.link }))) { await copyText(this.link); toast('Link copied'); }
+      if (!this.link) return;
+      if (!(await shareText({ title: 'Evenly', text: this.#message(), url: this.link }))) { await copyText(`${this.#message()} ${this.link}`); toast('Link copied. Paste it in any chat.'); }
     },
-    async copy() { await copyText(this.link); haptic(); toast('Update link copied'); },
+    async copy() {
+      if (!this.link) return;
+      await copyText(this.link);
+      haptic();
+      toast('Link copied');
+    },
     async file() {
       const name = app.store.state(this.g).group.name.replace(/[^\w\- ]+/g, '') || 'group';
       await shareFile(`${name}.evenly.txt`, this.link, 'text/plain');
     },
   };
 }
+
+// Older names, kept so every entry point opens the same screen.
+export const InviteScreen = GroupLinkScreen;
+export const ShareUpdatesScreen = GroupLinkScreen;
 
 /* ---------------- Import (paste, file, camera) ---------------- */
 

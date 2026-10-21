@@ -188,11 +188,15 @@ app.importLink = async (text) => {
   if (res.kind === 'join' && res.isNew) {
     await app.store.markSeen(); // a group's history isn't "new activity" to someone who just joined
     haptic('success');
-    toast(`You joined “${st.group.name}”`);
+    toast(st.group.direct ? `You’re connected with ${app.store.groupName(res.g)}` : `You joined “${st.group.name}”`);
     app.openGroup(res.g);
     if (res.needsClaim) app.present(new JoinScreen(res.g, res.from));
   } else {
-    toast(res.added ? `Merged ${res.added} change${res.added === 1 ? '' : 's'} from ${res.from?.name || 'a friend'} into “${st.group.name}”` : `“${st.group.name}” was already up to date`);
+    const name = app.store.groupName(res.g);
+    const who = res.from?.name || 'a friend';
+    const n = `${res.added} update${res.added === 1 ? '' : 's'}`;
+    toast(!res.added ? `Already up to date with ${st.group.direct ? name : `“${name}”`}`
+      : st.group.direct ? `Got ${n} from ${who}` : `Got ${n} from ${who} in “${name}”`);
     if (res.added) haptic('success');
     if (res.needsClaim) app.present(new JoinScreen(res.g, res.from));
     else app.openGroup(res.g);

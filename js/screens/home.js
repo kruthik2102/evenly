@@ -71,6 +71,7 @@ export class GroupsScreen {
         <h2>Split costs with anyone</h2>
         <p>Create a group for a trip, your flat or a dinner. Everything stays on your phone and syncs with friends through links.</p>
         <button class="btn btn-primary btn-large" data-act="newGroup">Create a group</button>
+        <button class="btn btn-tinted" data-act="addFriend">Split with one friend</button>
         <button class="btn btn-plain" data-act="paste">I have an invite link</button>
       </div>`;
     }
@@ -134,6 +135,7 @@ export class GroupsScreen {
     ...sharedAddHandlers,
     open(el) { app.show(new GroupScreen(el.dataset.g), this); },
     newGroup() { app.present(new NewGroupScreen()); },
+    addFriend() { app.present(new AddFriendScreen()); },
     paste() { app.present(new ImportScreen()); },
     search() { app.show(new SearchScreen(), this); },
     friendsTab() { app.selectTab('friends'); },
@@ -173,6 +175,8 @@ export class FriendsScreen {
     return html`
       <div class="summary">${overallLine(store.overall())}
         <button class="nav-btn tinted" data-act="filter" aria-label="Filter friends">${icon('filter')}</button></div>
+      <div class="list"><button class="cell tappable" data-act="addFriend"><span class="cell-leading"><span class="sq tint-indigo">${icon('plus')}</span></span>
+        <span class="cell-main"><span class="cell-title accent-text">Add a friend</span><span class="cell-sub">Track what you owe each other outside any group</span></span></button></div>
       <div class="list">
         ${friends.map((f) => {
           const t = Object.entries(f.total);
@@ -205,23 +209,29 @@ export class FriendsScreen {
   };
 }
 
+/**
+ * A one-to-one ledger with a friend. Standalone it ends by opening the
+ * ledger and the friend's invite; inside the expense form, `onDone(g)` picks it.
+ */
 export class AddFriendScreen {
-  constructor() { this.title = 'Add a friend'; this.name = ''; }
-  leading() { return html`<button class="nav-btn text" data-act="cancel">Cancel</button>`; }
+  constructor({ onDone = null } = {}) { this.title = 'Add a friend'; this.name = ''; this.onDone = onDone; }
+  leading() { return this.onDone ? '' : html`<button class="nav-btn text" data-act="cancel">Cancel</button>`; }
   actions() { return html`<button class="nav-btn text bold" data-act="save">Add</button>`; }
   body() {
-    return html`<div class="form-intro"><p>This creates a private ledger between the two of you for expenses outside any group. You can invite them with a link afterwards.</p></div>
-      <div class="list"><label class="cell"><span class="cell-main"><input class="inline" data-field="name" placeholder="Name" autocomplete="off" autofocus value="${this.name}"></span></label></div>`;
+    return html`<div class="form-intro"><p>Evenly makes a private ledger for the two of you. Next you’ll get a link to send them on WhatsApp, so they can see and add expenses too.</p></div>
+      <div class="list"><form class="cell add-person"><span class="cell-main"><input class="inline" data-field="name" placeholder="Friend’s name" autocomplete="off" autofocus enterkeyhint="done" value="${this.name}"></span></form></div>`;
   }
+  afterRender(page) { page.querySelector('form')?.addEventListener('submit', (e) => { e.preventDefault(); this.on.save.call(this); }); }
   onInput(f, el) { this.name = el.value; }
   on = {
     cancel() { this.sheet.close(); },
     async save() {
       if (!this.name.trim()) return toast('Type a name first');
       const g = await app.store.directWith({ key: 'new:' + this.name, name: this.name.trim(), emoji: null, anyPersonId: null });
+      if (this.onDone) return this.onDone(g);
       this.sheet.close();
-      const other = app.store.members(g).find((m) => m.id !== app.store.meIn(g));
-      app.present(new InviteScreen(g, other?.id));
+      app.openGroup(g);
+      app.present(new InviteScreen(g));
     },
   };
 }
@@ -338,7 +348,7 @@ export class ActivityScreen {
     search() { app.show(new SearchScreen(), this); },
     open(el) {
       const { g, t, id, on } = el.dataset;
-      if (t === 'expense') app.show(new ExpenseScreen(g, id), this);
+      if (t === 'expense' || t === 'receipt') app.show(new ExpenseScreen(g, id), this);
       else if (t === 'comment' && on) app.show(new ExpenseScreen(g, on), this);
       else if (t === 'payment') app.show(new PaymentScreen(g, id), this);
       else if (app.store.state(g) && !app.store.state(g).group.deleted) app.show(new GroupScreen(g), this);

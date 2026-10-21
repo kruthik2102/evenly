@@ -8,7 +8,7 @@ import { expenseParts } from '../core/balances.js';
 import { minorDigits, formatPlain } from '../core/money.js';
 import { dueDates, COPIED_FIELDS, isoDate } from '../core/recurring.js';
 import { newGroupKey } from '../sync/codec.js';
-import { makeInvite, makeSync, readLink } from '../sync/links.js';
+import { makeInvite, readLink } from '../sync/links.js';
 
 /* ---------- persistence ---------- */
 
@@ -249,21 +249,31 @@ export class Store {
 
   /* ----- expenses, payments, comments ----- */
 
-  async saveExpense(g, id, fields) {
+  async saveExpense(g, id, { receipt, ...fields }) {
     const st = this.state(g);
+    let repeatOn = false;
     if (!id) {
       id = newId();
       await this.#write(g, 'expense', id, { ...fields, createdBy: this.meIn(g), deleted: false });
-      if (fields.repeat && fields.repeat !== 'off') await this.catchUpRecurring();
-      return id;
+      repeatOn = fields.repeat && fields.repeat !== 'off';
+    } else {
+      // Only write the fields that changed, so concurrent edits to other fields survive.
+      const cur = st.expense.get(id) || {};
+      const diff = {};
+      for (const [k, v] of Object.entries(fields)) if (JSON.stringify(cur[k]) !== JSON.stringify(v)) diff[k] = v;
+      if (Object.keys(diff).length) await this.#write(g, 'expense', id, diff);
+      repeatOn = diff.repeat && diff.repeat !== 'off';
     }
-    // Only write the fields that changed, so concurrent edits to other fields survive.
-    const cur = st.expense.get(id) || {};
-    const diff = {};
-    for (const [k, v] of Object.entries(fields)) if (JSON.stringify(cur[k]) !== JSON.stringify(v)) diff[k] = v;
-    if (Object.keys(diff).length) await this.#write(g, 'expense', id, diff);
-    if (diff.repeat && diff.repeat !== 'off') await this.catchUpRecurring();
+    if (receipt !== undefined && (receipt || null) !== this.receiptOf(g, id)) await this.#write(g, 'receipt', id, { data: receipt || null });
+    if (repeatOn) await this.catchUpRecurring();
     return id;
+  }
+
+  /** An expense's photo. Older expenses kept it inline; newer ones keep it in its own record. */
+  receiptOf(g, id) {
+    const st = this.state(g);
+    const r = st?.receipt.get(id);
+    return (r ? r.data : st?.expense.get(id)?.receipt) || null;
   }
 
   deleteEntity(g, type, id) { return this.#write(g, type, id, { deleted: true }); }
@@ -342,6 +352,16 @@ export class Store {
       .filter((grp) => grp.ledger.state.group.name !== undefined && !grp.ledger.state.group.deleted)
       .filter((grp) => includeDirect || !grp.ledger.state.group.direct)
       .map((grp) => grp.g);
+  }
+
+  /** What to call a group on this phone. A one-to-one ledger is named after the other person. */
+  groupName(g) {
+    const st = this.state(g);
+    if (!st) return 'Group';
+    if (!st.group.direct) return st.group.name || 'Group';
+    const me = this.meIn(g);
+    const others = live(st, 'member').filter((m) => m.id !== me && !m.left);
+    return others.map((m) => m.name).join(', ') || st.group.name || 'Friend';
   }
 
   members(g, { includeLeft = false } = {}) {
@@ -461,24 +481,33 @@ export class Store {
 
   from() { return { device: this.device.id, name: this.device.name }; }
 
-  async inviteLink(g, claim) {
-    const grp = this.groups.get(g);
-    return makeInvite({ groupId: g, key: grp.key, ops: grp.ledger.allOps(), claim, from: this.from(), name: grp.ledger.state.group.name });
+  /** What links carry: the whole history except receipt photos, which only travel phone to phone. */
+  #linkOps(grp) {
+    return grp.ledger.allOps().filter((op) => op.t !== 'receipt');
   }
 
-  /** Link with what this group hasn't shared yet (or everything). */
-  async syncLink(g, { full = false } = {}) {
+  /**
+   * The group link. There's one kind of link: whoever opens it joins the group
+   * if they're new, or gets the latest changes if they're already in.
+   * `claim` makes it a personal invite that sets the opener up as that member.
+   */
+  async shareLink(g, { claim = null } = {}) {
     const grp = this.groups.get(g);
-    const ops = full ? grp.ledger.allOps() : grp.ledger.since(grp.shareMark || 0);
-    const link = await makeSync({ groupId: g, key: grp.key, ops, from: this.from() });
+    const count = this.unsharedCount(g);
+    const link = await makeInvite({ groupId: g, key: grp.key, ops: this.#linkOps(grp), claim, from: this.from(), name: grp.ledger.state.group.name });
     grp.shareMark = grp.ledger.order.length;
     await this.#saveMeta(grp);
-    return { link, count: ops.length };
+    return { link, count };
   }
 
+  async inviteLink(g, claim) {
+    return (await this.shareLink(g, { claim })).link;
+  }
+
+  /** Changes made here or received since this phone last shared the group link. */
   unsharedCount(g) {
     const grp = this.groups.get(g);
-    return grp ? grp.ledger.order.length - (grp.shareMark || 0) : 0;
+    return grp ? grp.ledger.since(grp.shareMark || 0).filter((op) => op.t !== 'receipt').length : 0;
   }
 
   /** Accepts an invite or update link (or any text containing one). */

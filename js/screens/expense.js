@@ -13,6 +13,7 @@ import { live } from '../core/ledger.js';
 import { app } from '../app/app.js';
 import { historyLine, actorName } from './describe.js';
 import { deleteWithUndo } from './group.js';
+import { AddFriendScreen } from './home.js';
 
 const fmt = formatMoney;
 
@@ -49,6 +50,7 @@ export class ExpenseScreen {
     const comments = live(st, 'comment').filter((c) => c.on === this.id).sort((a, b) => a._created - b._created);
     const ops = e._ops;
     const next = e.repeat && e.repeat !== 'off' ? nextDue(e, store.today()) : null;
+    const photo = store.receiptOf(this.g, this.id);
     const source = e.from ? st.expense.get(e.from) : null;
     return html`
       ${e.deleted ? html`<div class="banner tint-red"><span>This expense was deleted.</span><button class="btn btn-small" data-act="restore">Restore</button></div>` : ''}
@@ -61,7 +63,7 @@ export class ExpenseScreen {
         ${next ? html`<p class="pill-note">${icon('repeat')} Repeats ${REPEATS.find((r) => r.id === e.repeat).label.toLowerCase()} · next on ${fmtDate(next)}</p>` : ''}
         ${source ? html`<button class="pill-note link" data-act="source">${icon('repeat')} From a repeating expense</button>` : ''}
       </div>
-      ${e.receipt ? html`<button class="receipt-thumb" data-act="receipt" aria-label="View receipt"><img src="${e.receipt}" alt="Receipt photo"></button>` : ''}
+      ${photo ? html`<button class="receipt-thumb" data-act="receipt" aria-label="View receipt"><img src="${photo}" alt="Receipt photo"></button>` : ''}
       ${!res.ok ? html`<div class="banner tint-orange"><span>${res.error}. Edit the split so balances include this expense.</span></div>` : ''}
       <h3 class="section-header">Who paid and who owes</h3>
       <div class="list">
@@ -97,7 +99,7 @@ export class ExpenseScreen {
       await deleteWithUndo(this.g, 'expense', this.id);
     },
     async restore() { await app.store.restoreEntity(this.g, 'expense', this.id); haptic('success'); },
-    receipt() { app.present(new ReceiptViewer(this.e.receipt)); },
+    receipt() { app.present(new ReceiptViewer(app.store.receiptOf(this.g, this.id))); },
     source() { app.show(new ExpenseScreen(this.g, this.e.from), this); },
     async send() {
       const text = this.comment.trim();
@@ -156,7 +158,7 @@ export class ExpenseForm {
       const payers = Object.keys(e.paidBy || {}).filter((k) => e.paidBy[k]);
       this.d = {
         g, desc: e.desc, amountText: formatPlain(e.amount, e.currency), currency: e.currency, category: e.category || 'general', catManual: true,
-        date: e.date, repeat: e.repeat || 'off', notes: e.notes || '', receipt: e.receipt || null,
+        date: e.date, repeat: e.repeat || 'off', notes: e.notes || '', receipt: store.receiptOf(g, id),
         payer: payers.length === 1 ? payers[0] : 'multi',
         multi: Object.fromEntries(payers.map((k) => [k, formatPlain(e.paidBy[k], e.currency)])),
         split: { mode: e.split?.mode || 'equal', members: [...(e.split?.members || Object.keys(e.split?.values || {}))], values: { ...(e.split?.values || {}) }, items: structuredClone(e.split?.items || []) },
@@ -395,10 +397,16 @@ class GroupPicker {
     return html`
       <h3 class="section-header">Groups</h3>
       <div class="list">${groups.length ? groups.map((g) => html`<button class="cell tappable" data-act="group" data-g="${g}"><span class="cell-leading">${groupTile(store.state(g).group)}</span><span class="cell-main"><span class="cell-title">${store.state(g).group.name}</span></span>${g === this.form.d.g ? html`<span class="cell-trailing tint-text">${icon('check')}</span>` : ''}</button>`) : html`<div class="cell"><span class="cell-main muted">No groups yet</span></div>`}</div>
-      ${friends.length ? html`<h3 class="section-header">Just with a friend (non-group)</h3>
-      <div class="list">${friends.map((f) => html`<button class="cell tappable" data-act="friend" data-key="${f.key}"><span class="cell-leading">${avatar({ ...f, id: f.key })}</span><span class="cell-main"><span class="cell-title">${f.name}</span></span></button>`)}</div>` : ''}`;
+      <h3 class="section-header">Just with a friend (non-group)</h3>
+      <div class="list">${friends.map((f) => html`<button class="cell tappable" data-act="friend" data-key="${f.key}"><span class="cell-leading">${avatar({ ...f, id: f.key })}</span><span class="cell-main"><span class="cell-title">${f.name}</span></span></button>`)}
+        <button class="cell tappable" data-act="newFriend"><span class="cell-leading"><span class="sq tint-indigo">${icon('plus')}</span></span><span class="cell-main"><span class="cell-title accent-text">New friend…</span></span></button></div>`;
   }
   on = {
+    newFriend() {
+      this.nav.push(new AddFriendScreen({
+        onDone: (g) => { this.form.setGroup(g); this.nav.popToRoot(); },
+      }));
+    },
     group(el) { this.form.setGroup(el.dataset.g); this.nav.pop(); },
     async friend(el) {
       const f = app.store.friends().find((x) => x.key === el.dataset.key);

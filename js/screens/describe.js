@@ -20,7 +20,7 @@ export function describe({ g, op, ent, kind }) {
   const store = app.store;
   const st = store.state(g);
   const who = actorName(g, op.d);
-  const gname = q(st.group.name || 'a group');
+  const gname = st.group.direct ? `your expenses with ${store.groupName(g)}` : q(st.group.name || 'a group');
   const name = (id) => store.memberName(g, id);
   const me = store.meIn(g);
   const v = op.v || {};
@@ -63,6 +63,10 @@ export function describe({ g, op, ent, kind }) {
     case 'comment': {
       const exp = st.expense.get(ent.on);
       return { text: `${who} commented on ${q(exp?.desc || 'an expense')}: ${q(ent.text || '')}` };
+    }
+    case 'receipt': {
+      const exp = st.expense.get(op.e);
+      return { text: `${who} ${v.data ? 'attached a receipt photo to' : 'removed the receipt photo from'} ${q(exp?.desc || 'an expense')}.` };
     }
     case 'conversion':
       return { text: `${who} converted ${ent.from} balances to ${ent.to} in ${gname} at ${ent.rate}.` };
