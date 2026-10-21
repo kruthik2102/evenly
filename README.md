@@ -2,6 +2,10 @@
 
 Split expenses with friends. Free, private, no servers.
 
+**Open it:** https://kruthik2102.github.io/evenly/. On Android, choose
+**Install** (or ⋮ → *Add to Home screen*) in Chrome to get an app icon,
+full-screen launch and offline use.
+
 Evenly is a feature-complete, serverless take on group-expense apps like
 Splitwise, including everything Splitwise puts behind Pro: receipt scanning,
 itemized splits, charts, search, currency conversion, default splits and
